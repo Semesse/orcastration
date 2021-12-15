@@ -1,6 +1,6 @@
-use crossbeam::select;
+use crossbeam::{channel::tick, select};
 use log::{debug, info};
-use std::net::UdpSocket;
+use std::{net::UdpSocket, sync::atomic::AtomicU32, time::Duration};
 
 use orcar::{
     protocol::{Message, MessageState},
@@ -14,19 +14,24 @@ pub fn main() {
     let s = Server { socket };
     let rx = s.start().expect("failed to start server");
     let _buf = Box::new([0; std::mem::size_of::<Message>()]);
+    let ticker = tick(Duration::from_millis(1000));
+    let count = AtomicU32::new(0);
 
     loop {
         select! {
             recv(rx) -> result => {
                 match result {
-                Ok((mut mb, addr)) => {
-                    mb.set_state(MessageState::AckSent);
-                    info!("message: {:?} {:?}", mb.as_message_mut(), addr);
-                    socket_ref.send_to(mb.as_bytes_mut(), addr).ok();
-                    debug!("wait next message");
-                }
-            Err(_e) => {}
-        }}
+                    Ok((mut mb, addr)) => {
+                        count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        mb.set_state(MessageState::ServerStart);
+                        // info!("message: {:?} {:?}", mb.as_message_mut(), addr);
+                        socket_ref.send_to(mb.as_bytes_mut(), addr).ok();
+                    }
+                Err(_e) => {}
+            }}
+            recv(ticker) -> _ => {
+                info!("handled {} messages within 1s", count.swap(0, std::sync::atomic::Ordering::Relaxed))
+            }
         }
     }
 

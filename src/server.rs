@@ -25,7 +25,7 @@ impl Server {
                 match socket.recv_from(buf.as_mut_slice()) {
                     Ok((_size, addr)) => {
                         let mut mb = MessageBuf { buf: *buf.clone() };
-                        mb.set_state(MessageState::OriginateReceived);
+                        mb.set_state(MessageState::ClientEnd);
                         s.send((mb, addr)).unwrap();
                     }
                     Err(e) => {

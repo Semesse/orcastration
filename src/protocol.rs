@@ -15,10 +15,10 @@ use crate::helper::get_current_nanos;
 #[repr(u64)]
 pub enum MessageState {
     Created = 0,
-    OriginateSent = 114,
-    OriginateReceived = 514,
-    AckSent = 1919,
-    AckReceived = 810,
+    ClientStart = 114,
+    ClientEnd = 514,
+    ServerStart = 1919,
+    ServerEnd = 810,
 }
 
 // #[repr(C, packed)]
@@ -64,15 +64,19 @@ impl MessageBuf {
         mb
     }
 
+    pub fn get_state(&mut self) -> MessageState {
+        self.as_message_mut().state
+    }
+
     pub fn set_state(&mut self, state: MessageState) {
         let m = self.as_message_mut();
         m.state = state;
         match state {
             MessageState::Created => (),
-            MessageState::OriginateSent => m.originate_timestamp = get_current_nanos(),
-            MessageState::OriginateReceived => m.receive_timestamp = get_current_nanos(),
-            MessageState::AckSent => m.ack_timestamp = get_current_nanos(),
-            MessageState::AckReceived => m.finish_timestamp = get_current_nanos(),
+            MessageState::ClientStart => m.originate_timestamp = get_current_nanos(),
+            MessageState::ClientEnd => m.receive_timestamp = get_current_nanos(),
+            MessageState::ServerStart => m.ack_timestamp = get_current_nanos(),
+            MessageState::ServerEnd => m.finish_timestamp = get_current_nanos(),
         }
     }
 }
