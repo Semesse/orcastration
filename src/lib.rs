@@ -1,3 +1,4 @@
+#![feature(integer_atomics)]
 pub mod client;
 pub mod helper;
 pub mod log;

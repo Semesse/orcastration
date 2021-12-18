@@ -23,6 +23,7 @@ pub enum MessageState {
 
 // #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub struct Message {
     pub state: MessageState,
     // local time
@@ -33,6 +34,7 @@ pub struct Message {
     pub ack_timestamp: u128,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct MessageBuf {
     pub buf: [u8; std::mem::size_of::<Message>()],
 }

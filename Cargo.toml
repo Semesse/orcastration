@@ -6,6 +6,8 @@ edition = "2018"
 [dependencies]
 byteorder = "1.4.3"
 chrono = "0.4.19"
+cpal = "0.13.4"
+mp3-duration = "0.1.7"
 crossbeam = "0.8.0"
 env_logger = "0.8.3"
 futures = "0.3.14"

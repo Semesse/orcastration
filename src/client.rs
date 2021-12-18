@@ -1,18 +1,21 @@
 use crossbeam::{channel, select};
-use log::{debug, info, warn};
+use log::{info, warn};
 
+use std::num::Wrapping;
+use std::sync::atomic::AtomicI128;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{io::Error, net::UdpSocket, thread};
+use std::{net::UdpSocket, thread};
 
 use crate::helper::get_current_nanos;
 use crate::protocol::{Message, MessageBuf, MessageState};
 
 pub struct Client {
     pub socket: UdpSocket,
-    // offset to local time
-    synced_offset: i128,
-    min_tx_time: [u128; 2],
-    min_rx_time: [u128; 2],
+    // offset to local time,
+    pub synced_offset: Arc<AtomicI128>,
+    min_tx_time: [u128; 3], // duration, start, end
+    min_rx_time: [u128; 3],
 }
 
 pub struct ClientOptions {
@@ -23,9 +26,9 @@ impl Client {
     pub fn new(socket: UdpSocket) -> Self {
         return Client {
             socket,
-            synced_offset: 0,
-            min_tx_time: [0, 0],
-            min_rx_time: [0, 0],
+            synced_offset: Arc::new(AtomicI128::new(0)),
+            min_tx_time: [0, 0, 0],
+            min_rx_time: [0, 0, 0],
         };
     }
 
@@ -66,8 +69,11 @@ impl Client {
         }
     }
 
-    pub fn now(&self) -> u128 {
-        return (self.synced_offset + get_current_nanos() as i128) as u128;
+    pub fn now(&self) -> i128 {
+        return self.synced_offset.fetch_add(
+            get_current_nanos() as i128, // it never overflows ha
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     fn handle_message(&mut self, mut mb: MessageBuf) {
@@ -75,23 +81,47 @@ impl Client {
             warn!("received message with wrong state {:?}", mb.get_state());
             return;
         }
+        // info!("message {:?}", mb.as_message_mut());
         let m = mb.as_message_mut();
-        let mut should_update = false;
-        if m.receive_timestamp - m.originate_timestamp > self.min_tx_time[1] - self.min_tx_time[0] {
-            self.min_tx_time = [m.originate_timestamp, m.receive_timestamp];
-            should_update = true;
+        let tx_time = Wrapping(self.min_tx_time[1]) - Wrapping(self.min_tx_time[0]);
+        let rx_time = Wrapping(self.min_rx_time[1]) - Wrapping(self.min_rx_time[0]);
+        if Wrapping(m.receive_timestamp) - Wrapping(m.originate_timestamp) < tx_time {
+            self.min_tx_time = [tx_time.0, m.originate_timestamp, m.receive_timestamp];
         }
-        if m.finish_timestamp - m.ack_timestamp > self.min_rx_time[1] - self.min_rx_time[0] {
-            self.min_rx_time = [m.ack_timestamp, m.finish_timestamp];
-            should_update = true;
+        if Wrapping(m.finish_timestamp) - Wrapping(m.ack_timestamp) < rx_time {
+            self.min_rx_time = [rx_time.0, m.ack_timestamp, m.finish_timestamp];
         }
-        if should_update {
-            let tx_time = self.min_tx_time[1] - self.min_tx_time[0];
-            let rx_time = self.min_rx_time[1] - self.min_rx_time[0];
-            let synced_time = m.ack_timestamp + (tx_time + rx_time) / 2;
-            // we assume that offset should not overflow
-            self.synced_offset = synced_time as i128 - get_current_nanos() as i128;
-            info!("synced time {:?}", self.synced_offset);
-        }
+
+        let tx_time = Wrapping(self.min_tx_time[1]) - Wrapping(self.min_tx_time[0]);
+        let rx_time = Wrapping(self.min_rx_time[1]) - Wrapping(self.min_rx_time[0]);
+        let synced_time = Wrapping(m.ack_timestamp) + Wrapping((tx_time + rx_time).0 / 2);
+        // we assume that offset should not overflow
+        // info!(
+        //     "synced time {:?} {} {} {}",
+        //     m,
+        //     (synced_time - Wrapping(m.finish_timestamp)).0 as i128,
+        //     synced_time.0,
+        //     m.finish_timestamp
+        // );
+        self.synced_offset.store(
+            (synced_time - Wrapping(m.finish_timestamp)).0 as i128,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        info!(
+            "synced offset {:?} ms",
+            (self
+                .synced_offset
+                .load(std::sync::atomic::Ordering::Relaxed))
+                / 1_000_000
+        );
+
+        // println!(
+        //     "{:?} {:?}",
+        //     self.min_tx_time[0],
+        //     Duration::from_micros(50).as_nanos()
+        // );
+        // self.min_tx_time[0] += Duration::from_micros(50).as_nanos();
+        // self.min_rx_time[0] += Duration::from_micros(50).as_nanos();
+        // }
     }
 }
