@@ -22,8 +22,7 @@ where
     I::Item: Sample,
 {
     for _ in 0..n {
-        if input.next().is_none() {
-            break;
+        input.next();
         }
     }
 }
@@ -52,52 +51,64 @@ pub fn main() {
         );
 
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
+        // let sink = Sink::try_new(&stream_handle).unwrap();
 
-        // Add a dummy source of the sake of the example.
-        let source = SineWave::new(440)
-            .take_duration(Duration::from_secs_f32(1f32))
-            .amplify(0.20);
-        sink.append(source);
-        sink.sleep_until_end();
+        // // Add a dummy source of the sake of the example.
+        // let source = SineWave::new(440)
+        //     .take_duration(Duration::from_secs_f32(1f32))
+        //     .amplify(0.20);
+        // sink.append(source);
+        // sink.sleep_until_end();
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let (_stream, stream_handle) =
-            OutputStream::try_from_device(&cpal::default_host().default_output_device().unwrap())
-                .unwrap();
-        let path = std::path::Path::new("/Users/semesse/Documents/orcastration/bro.mp3");
+        // let (_stream, stream_handle) =
+        //     OutputStream::try_from_device(&cpal::default_host().default_output_device().unwrap())
+        //         .unwrap();
+        let args = std::env::args().collect::<Vec<String>>();
+        let path = std::path::Path::new(&args[1]);
+        info!("{:?}", path);
         let file = BufReader::new(File::open(path).unwrap());
         let duration = mp3_duration::from_path(path).unwrap();
-        let duration_nanos = duration.as_nanos();
         let mut source = Decoder::new(file).unwrap().repeat_infinite();
-        let sink = Sink::try_new(&stream_handle).unwrap();
-        let now =
-            synced_offset.load(std::sync::atomic::Ordering::Relaxed) as u128 + get_current_nanos();
-        let skip_duration_nanos = now % duration_nanos;
-        info!(
-            "skip {} {} {} {} {:?}",
-            synced_offset.load(std::sync::atomic::Ordering::Relaxed),
-            get_current_nanos(),
-            now,
-            duration.as_nanos(),
-            Duration::from_nanos(skip_duration_nanos as u64)
-        );
+        // let sink = Sink:x:try_new(&stream_handle).unwrap();
+        let now = get_current_nanos()
+            .wrapping_sub(synced_offset.load(std::sync::atomic::Ordering::Relaxed) as u128);
+        let skip_duration_nanos = now % duration.as_nanos();
+        // info!(
+        //     "skip {} {} {} {} {:?}",
+        //     synced_offset.load(std::sync::atomic::Ordering::Relaxed),
+        //     get_current_nanos(),
+        //     now,
+        //     duration.as_nanos(),
+        //     Duration::from_nanos(skip_duration_nanos as u64)
+        // );
         // keep silent until the start of the song
         // let mut source = source.delay(Duration::from_nanos(skip_duration.try_into().unwrap()));
         // or skip first x frames, to make it play immediately
-        let skip_samples_count: usize = (skip_duration_nanos / 1_000_000_000)
-            .checked_mul(source.sample_rate().try_into().unwrap())
-            .unwrap()
-            .checked_mul(source.channels().try_into().unwrap())
-            .unwrap()
+        let skip_samples_count: usize = (skip_duration_nanos)
+            .wrapping_mul(source.sample_rate().try_into().unwrap())
+            .wrapping_div(1_000_000_000)
+            .wrapping_mul(source.channels().try_into().unwrap())
             .try_into()
             .unwrap();
+        println!("skip {} {}", skip_duration_nanos, skip_samples_count);
         skip_samples(&mut source, skip_samples_count);
-        sink.append(source);
-        // info!("playing {}", get_current_nanos());
-        // let play_start = skip % duration.as_nanos();
-        sink.play();
-        info!("play {}", get_current_nanos());
-        sink.sleep_until_end();
+
+        let now = get_current_nanos()
+            .wrapping_sub(synced_offset.load(std::sync::atomic::Ordering::Relaxed) as u128);
+        let skip_duration_nanos_1 = now % duration.as_nanos();
+
+        let skip_samples_count_1: usize = (skip_duration_nanos_1 - skip_duration_nanos)
+            .wrapping_mul(source.sample_rate().try_into().unwrap())
+            .wrapping_div(1_000_000_000)
+            .wrapping_mul(source.channels().try_into().unwrap())
+            // .wrapping_sub(skip_samples_count.try_into().unwrap())
+            .try_into()
+            .unwrap();
+        println!("skip {} {}", skip_duration_nanos, skip_samples_count_1);
+        skip_samples(&mut source, skip_samples_count_1);
+        // let s = skip::skip(source, skip_samples_count);
+        stream_handle.play_raw(source.convert_samples());
+        std::thread::sleep(Duration::MAX);
     });
     client.start(ClientOptions {
         sync_interval_milis: 100,

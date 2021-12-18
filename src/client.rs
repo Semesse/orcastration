@@ -69,11 +69,11 @@ impl Client {
         }
     }
 
-    pub fn now(&self) -> i128 {
-        return self.synced_offset.fetch_add(
-            get_current_nanos() as i128, // it never overflows ha
-            std::sync::atomic::Ordering::Relaxed,
-        );
+    pub fn now(&self) -> u128 {
+        get_current_nanos().wrapping_sub(
+            self.synced_offset
+                .load(std::sync::atomic::Ordering::Relaxed) as u128,
+        )
     }
 
     fn handle_message(&mut self, mut mb: MessageBuf) {
@@ -104,7 +104,7 @@ impl Client {
         //     m.finish_timestamp
         // );
         self.synced_offset.store(
-            (synced_time - Wrapping(m.finish_timestamp)).0 as i128,
+            (Wrapping(m.finish_timestamp) - synced_time).0 as i128,
             std::sync::atomic::Ordering::Relaxed,
         );
         info!(
