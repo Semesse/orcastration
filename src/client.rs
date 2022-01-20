@@ -107,21 +107,5 @@ impl Client {
             (Wrapping(m.finish_timestamp) - synced_time).0 as i128,
             std::sync::atomic::Ordering::Relaxed,
         );
-        info!(
-            "synced offset {:?} ms",
-            (self
-                .synced_offset
-                .load(std::sync::atomic::Ordering::Relaxed))
-                / 1_000_000
-        );
-
-        // println!(
-        //     "{:?} {:?}",
-        //     self.min_tx_time[0],
-        //     Duration::from_micros(50).as_nanos()
-        // );
-        // self.min_tx_time[0] += Duration::from_micros(50).as_nanos();
-        // self.min_rx_time[0] += Duration::from_micros(50).as_nanos();
-        // }
     }
 }
